@@ -58,20 +58,40 @@ def download_roboflow_dataset(
 
 
 if __name__ == "__main__":
-    # Download first dataset: Drone vs Bird
+    import shutil
+    from pathlib import Path
+
+    # Ensure data/raw exists
+    Path("data/raw").mkdir(parents=True, exist_ok=True)
+
+    # Download first dataset
+    print("\n=== Downloading Dataset 1: Drone vs Bird ===")
+    dst1 = Path("data/raw/drone-vs-bird-object-detection-1")
+    if dst1.exists():
+        shutil.rmtree(dst1)
+
     download_roboflow_dataset(
         workspace="oleksandr-gorpynich",
         project="drone-vs-bird-object-detection-2fnnk",
         version=1,
         format="yolov8",
-        location="./data/raw"
+        location=str(dst1)
     )
+    print(f"✓ Saved to: {dst1}\n")
 
-    # Download second dataset: Airborne Object Detection
+    # Download second dataset
+    print("=== Downloading Dataset 2: Airborne Object Detection ===")
+    dst2 = Path("data/raw/Airborne-Object-Detection-4-AOD4-1")
+    if dst2.exists():
+        shutil.rmtree(dst2)
+
     download_roboflow_dataset(
         workspace="oleksandr-gorpynich",
         project="airborne-object-detection-4-aod4-zaeoh",
         version=1,
         format="yolov8",
-        location="./data/raw"
+        location=str(dst2)
     )
+    print(f"✓ Saved to: {dst2}\n")
+
+    print("✓ All datasets downloaded to data/raw/")

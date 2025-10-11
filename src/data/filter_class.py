@@ -116,9 +116,27 @@ def filter_yolo_dataset(
 
 
 if __name__ == "__main__":
+    from pathlib import Path
+
+    # Ensure data/processed exists
+    Path("data/processed").mkdir(parents=True, exist_ok=True)
+
+    # Filter first dataset: Drone vs Bird
+    print("\n=== Filtering Dataset 1: Drone vs Bird ===")
     filter_yolo_dataset(
         dataset_path="data/raw/drone-vs-bird-object-detection-1",
         output_path="data/processed/drone-vs-bird-roboflow",
         keep_classes=["drone"],
         splits=["train", "valid", "test"]
     )
+
+    # Filter second dataset: Airborne Object Detection
+    print("\n=== Filtering Dataset 2: Airborne Object Detection ===")
+    filter_yolo_dataset(
+        dataset_path="data/raw/Airborne-Object-Detection-4-AOD4-1",
+        output_path="data/processed/airborne-roboflow",
+        keep_classes=["drone"],
+        splits=["train", "valid", "test"]
+    )
+
+    print("\n✓ All datasets filtered to data/processed/")
