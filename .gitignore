@@ -1,0 +1,45 @@
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+
+# Data (too large for git)
+data/raw/*
+data/processed/*
+data/synthetic/*
+data/augmented/*
+data/splits/*
+
+# Model checkpoints
+models/checkpoints/*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Weights & Biases
+wandb/
+
+# Logs
+*.log
+results/
