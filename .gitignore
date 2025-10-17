@@ -43,3 +43,7 @@ wandb/
 # Logs
 *.log
 results/
+
+# YOLO stuff
+*.pt
+runs/
