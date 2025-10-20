@@ -1,0 +1,40 @@
+# YOLOv8 Training Configuration
+
+# Dataset
+data: data/processed/drone-vs-bird-binary/data.yaml  # Path to dataset YAML
+# Alternative: data/processed/airborne-binary/data.yaml
+
+# Model
+model: yolov8n.pt  # Pretrained model (n=nano, s=small, m=medium, l=large, x=xlarge)
+
+# Hyperparameters
+epochs: 50
+batch: 16
+imgsz: 640  # Image size (pixels)
+lr0: 0.01  # Initial learning rate
+lrf: 0.01  # Final learning rate (lr0 * lrf)
+momentum: 0.937
+weight_decay: 0.0005
+
+# Augmentation
+hsv_h: 0.015  # Image HSV-Hue augmentation
+hsv_s: 0.7    # Image HSV-Saturation augmentation
+hsv_v: 0.4    # Image HSV-Value augmentation
+degrees: 0.0  # Image rotation (+/- deg)
+translate: 0.1  # Image translation (+/- fraction)
+scale: 0.5    # Image scale (+/- gain)
+shear: 0.0    # Image shear (+/- deg)
+flipud: 0.0   # Image flip up-down (probability)
+fliplr: 0.5   # Image flip left-right (probability)
+mosaic: 1.0   # Image mosaic (probability)
+
+# Training
+patience: 10  # Early stopping patience (epochs)
+save: true    # Save checkpoint every epoch
+workers: 8    # Number of dataloader workers
+device: ''    # Device (empty for auto-detect, or 0,1,2,3 for GPU IDs)
+name: drone_detection  # Experiment name
+
+# Validation
+val: true     # Validate during training
+plots: true   # Save training plots

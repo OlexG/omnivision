@@ -115,28 +115,113 @@ def filter_yolo_dataset(
     print(f"New classes: {new_class_names}")
 
 
+def create_binary_dataset(
+    dataset_path: str,
+    output_path: str,
+    drone_class: str = "drone",
+    splits: list = ["train", "valid", "test"]
+):
+    """
+    Create binary dataset: drone (0) vs not-drone (1).
+    Relabels all non-drone classes as "not-drone".
+    """
+    dataset_path = Path(dataset_path)
+    output_path = Path(output_path)
+
+    # Read data.yaml
+    with open(dataset_path / "data.yaml", 'r') as f:
+        data_config = yaml.safe_load(f)
+
+    class_names = data_config['names']
+    print(f"Original classes: {class_names}")
+
+    drone_idx = class_names.index(drone_class)
+    print(f"Drone class index: {drone_idx}")
+
+    # Process each split
+    for split in splits:
+        split_path = dataset_path / split
+        if not split_path.exists():
+            print(f"Split '{split}' not found, skipping...")
+            continue
+
+        out_images = output_path / split / "images"
+        out_labels = output_path / split / "labels"
+        out_images.mkdir(parents=True, exist_ok=True)
+        out_labels.mkdir(parents=True, exist_ok=True)
+
+        images_path = split_path / "images"
+        labels_path = split_path / "labels"
+
+        for label_file in labels_path.glob("*.txt"):
+            with open(label_file, 'r') as f:
+                lines = f.readlines()
+
+            # Relabel: drone=0, everything else=1
+            new_lines = []
+            for line in lines:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+
+                class_id = int(parts[0])
+                if class_id == drone_idx:
+                    parts[0] = '0'  # drone
+                else:
+                    parts[0] = '1'  # not-drone
+                new_lines.append(' '.join(parts) + '\n')
+
+            # Copy image
+            image_name = label_file.stem
+            for ext in ['.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG']:
+                image_file = images_path / f"{image_name}{ext}"
+                if image_file.exists():
+                    shutil.copy2(image_file, out_images / f"{image_name}{ext}")
+                    break
+
+            # Write relabeled annotations
+            with open(out_labels / label_file.name, 'w') as f:
+                f.writelines(new_lines)
+
+        print(f"Split '{split}': processed")
+
+    # Create data.yaml with binary classes
+    new_data_config = {
+        'names': ['drone', 'not-drone'],
+        'nc': 2,
+        'train': '../train/images',
+        'val': '../valid/images',
+        'test': '../test/images'
+    }
+
+    with open(output_path / "data.yaml", 'w') as f:
+        yaml.dump(new_data_config, f, default_flow_style=False)
+
+    print(f"\n✓ Binary dataset saved to: {output_path}")
+
+
 if __name__ == "__main__":
     from pathlib import Path
 
     # Ensure data/processed exists
     Path("data/processed").mkdir(parents=True, exist_ok=True)
 
-    # Filter first dataset: Drone vs Bird
-    print("\n=== Filtering Dataset 1: Drone vs Bird ===")
-    filter_yolo_dataset(
+    # Process first dataset: Drone vs Bird (binary)
+    print("\n=== Processing Dataset 1: Drone vs Bird (Binary) ===")
+    create_binary_dataset(
         dataset_path="data/raw/drone-vs-bird-object-detection-1",
-        output_path="data/processed/drone-vs-bird-roboflow",
-        keep_classes=["drone"],
+        output_path="data/processed/drone-vs-bird-binary",
+        drone_class="drone",
         splits=["train", "valid", "test"]
     )
 
-    # Filter second dataset: Airborne Object Detection
-    print("\n=== Filtering Dataset 2: Airborne Object Detection ===")
-    filter_yolo_dataset(
+    # Process second dataset: Airborne (binary)
+    print("\n=== Processing Dataset 2: Airborne (Binary) ===")
+    create_binary_dataset(
         dataset_path="data/raw/Airborne-Object-Detection-4-AOD4-1",
-        output_path="data/processed/airborne-roboflow",
-        keep_classes=["drone"],
+        output_path="data/processed/airborne-binary",
+        drone_class="drone",
         splits=["train", "valid", "test"]
     )
 
-    print("\n✓ All datasets filtered to data/processed/")
+    print("\n✓ All datasets processed to data/processed/")
