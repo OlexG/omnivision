@@ -24,6 +24,10 @@ __pycache__/
 .ipynb_checkpoints/
 *.ipynb
 
+# Allow tracking notebooks in the notebooks directory
+!notebooks/
+!notebooks/**/*.ipynb
+
 # IDE
 .vscode/
 .idea/
