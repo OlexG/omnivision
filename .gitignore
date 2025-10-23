@@ -13,9 +13,6 @@ data/synthetic/*
 data/augmented/*
 data/splits/*
 
-# Model checkpoints
-models/checkpoints/*
-
 # Python
 __pycache__/
 *.py[cod]
