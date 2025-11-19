@@ -1,6 +1,7 @@
 """
 Video inference utility for the YOLOv8 drone detection model.
 Streams frames from a video source, runs inference, and overlays detections.
+Supports two-stage pipeline: detection + classification.
 """
 
 from __future__ import annotations
@@ -12,6 +13,9 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import torch
+from torchvision import transforms
+from torchvision.models import efficientnet_b0
 from ultralytics import YOLO
 
 
@@ -27,12 +31,28 @@ def _draw_detections(
     frame: np.ndarray,
     result,
     class_names: dict[int, str],
-    primary_class: str = "drone"
+    primary_class: str = "drone",
+    classifications: Optional[dict[int, tuple[str, float]]] = None,
 ) -> np.ndarray:
+    """
+    Draw detection bounding boxes with optional classification labels.
+    
+    Args:
+        frame: Input frame
+        result: YOLO detection result
+        class_names: Mapping of class IDs to names
+        primary_class: Primary class name (e.g., "drone")
+        classifications: Optional dict mapping box index to (class_name, confidence)
+    """
     annotated = frame.copy()
+    h, w = frame.shape[:2]
 
-    for box in result.boxes:
+    for idx, box in enumerate(result.boxes):
         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+        # Ensure coordinates are within frame bounds
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
+        
         cls = int(box.cls[0])
         conf = float(box.conf[0])
         class_name = class_names.get(cls, str(cls))
@@ -40,27 +60,66 @@ def _draw_detections(
         color = (0, 255, 0) if class_name == primary_class else (0, 0, 255)
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
 
-        label = f"{class_name}: {conf:.2%}"
-        (label_width, label_height), baseline = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
-        )
-        label_top = max(y1 - label_height - baseline, 0)
+        # Build label with detection and classification info
+        if classifications and idx in classifications:
+            drone_type, cls_conf = classifications[idx]
+            label = f"{drone_type}\nDet: {conf:.1%} | Cls: {cls_conf:.1%}"
+        else:
+            label = f"{class_name}: {conf:.2%}"
+
+        # Calculate text size for multi-line label
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.6
+        thickness = 2
+        line_height = 20
+        
+        if "\n" in label:
+            lines = label.split("\n")
+            max_width = 0
+            for line in lines:
+                (label_width, _), _ = cv2.getTextSize(line, font, font_scale, thickness)
+                max_width = max(max_width, label_width)
+            label_height = len(lines) * line_height
+            label_width = max_width
+        else:
+            (label_width, label_height), baseline = cv2.getTextSize(
+                label, font, font_scale, thickness
+            )
+            label_height += baseline
+
+        label_top = max(y1 - label_height - 5, 0)
         cv2.rectangle(
             annotated,
             (x1, label_top),
-            (x1 + label_width, label_top + label_height + baseline),
+            (x1 + label_width + 10, label_top + label_height + 5),
             color,
             -1,
         )
-        cv2.putText(
-            annotated,
-            label,
-            (x1, label_top + label_height),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2,
-        )
+        
+        # Draw text (handle multi-line)
+        if "\n" in label:
+            y_offset = label_top + line_height
+            for line in lines:
+                cv2.putText(
+                    annotated,
+                    line,
+                    (x1 + 5, y_offset),
+                    font,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+                y_offset += line_height
+        else:
+            cv2.putText(
+                annotated,
+                label,
+                (x1 + 5, label_top + label_height),
+                font,
+                font_scale,
+                (255, 255, 255),
+                thickness,
+            )
 
     return annotated
 
@@ -76,12 +135,100 @@ def run_video_inference(
     display: bool = True,
     output_path: Optional[str] = None,
     window_name: str = "YOLOv8 Drone Detection",
+    classifier_path: Optional[str] = None,
+    classification_conf: float = 0.3,
 ) -> None:
     """
     Run YOLOv8 inference on a video file or camera stream and draw bounding boxes.
     When displaying a video file, interactive controls allow seeking and pausing.
+    
+    Args:
+        model_path: Path to detection model
+        source: Video source (file path or camera index)
+        conf: Detection confidence threshold
+        iou: IOU threshold for NMS
+        device: Device for inference ('cpu', '0', etc.)
+        imgsz: Image size for inference
+        display: Whether to display video
+        output_path: Optional path to save output video
+        window_name: Window title for display
+        classifier_path: Optional path to classification model
+        classification_conf: Minimum detection confidence to run classification
     """
     model = YOLO(model_path)
+    
+    # Load classification model if provided
+    classifier = None
+    classifier_device = None
+    preprocess = None
+    classifier_class_names = None
+    
+    if classifier_path:
+        print(f"Loading classification model from {classifier_path}...")
+        checkpoint = torch.load(classifier_path, map_location='cpu')
+        
+        # Get number of classes from checkpoint
+        if 'num_classes' in checkpoint:
+            num_classes = checkpoint['num_classes']
+        elif 'class_names' in checkpoint:
+            num_classes = len(checkpoint['class_names'])
+            classifier_class_names = checkpoint['class_names']
+        else:
+            # Try to infer from model state dict
+            state_dict = checkpoint.get('model_state_dict', checkpoint)
+            # Look for classifier head
+            for key in state_dict.keys():
+                if 'classifier' in key and 'weight' in key:
+                    num_classes = state_dict[key].shape[0]
+                    break
+            else:
+                num_classes = 10  # Default to 10 classes
+        
+        # Create model
+        classifier = efficientnet_b0(weights=None)
+        classifier.classifier[1] = torch.nn.Linear(
+            classifier.classifier[1].in_features, num_classes
+        )
+        
+        # Load weights
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+        classifier.load_state_dict(state_dict)
+        classifier.eval()
+        
+        # Setup device
+        if device and device != 'cpu':
+            try:
+                device_idx = int(device)
+                classifier_device = torch.device(f'cuda:{device_idx}' if torch.cuda.is_available() else 'cpu')
+            except ValueError:
+                classifier_device = torch.device('cpu')
+        else:
+            classifier_device = torch.device('cpu')
+        
+        classifier = classifier.to(classifier_device)
+        
+        # Setup preprocessing (ImageNet normalization)
+        preprocess = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
+        
+        # Get class names if available
+        if classifier_class_names is None:
+            if 'class_names' in checkpoint:
+                classifier_class_names = checkpoint['class_names']
+            else:
+                # Default class names based on the notebook
+                classifier_class_names = [
+                    'Cinewhoop', 'DJI FPV', 'DJI Mavic', 'DJI Phantom', 'Fixed wing',
+                    'Hexacopter', 'Octocopter', 'Pluto Mini Drone', 'Quadcopter', 'VTOL'
+                ][:num_classes]
+        
+        print(f"✓ Classification model loaded ({num_classes} classes)")
+        print(f"  Classes: {', '.join(classifier_class_names)}")
+        print(f"  Device: {classifier_device}")
 
     capture = cv2.VideoCapture(_format_source(source))
     if not capture.isOpened():
@@ -176,7 +323,44 @@ def run_video_inference(
                 device=device,
                 verbose=False,
             )[0]
-            annotated = _draw_detections(frame, result, model.names)
+            
+            # Run classification on detected drones
+            classifications = None
+            if classifier and len(result.boxes) > 0:
+                classifications = {}
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w = frame.shape[:2]
+                
+                for idx, box in enumerate(result.boxes):
+                    cls_id = int(box.cls[0])
+                    det_conf = float(box.conf[0])
+                    class_name = model.names.get(cls_id, str(cls_id))
+                    
+                    # Only classify if it's a "drone" detection above threshold
+                    if class_name == "drone" and det_conf >= classification_conf:
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                        # Ensure coordinates are within bounds
+                        x1, y1 = max(0, x1), max(0, y1)
+                        x2, y2 = min(w, x2), min(h, y2)
+                        
+                        # Extract crop
+                        crop = frame_rgb[y1:y2, x1:x2]
+                        if crop.size > 0 and crop.shape[0] > 10 and crop.shape[1] > 10:
+                            try:
+                                # Preprocess and classify
+                                crop_tensor = preprocess(crop).unsqueeze(0).to(classifier_device)
+                                with torch.no_grad():
+                                    output = classifier(crop_tensor)
+                                    probs = torch.softmax(output, dim=1)[0]
+                                    cls_conf, pred_idx = probs.max(0)
+                                
+                                drone_type = classifier_class_names[pred_idx.item()]
+                                classifications[idx] = (drone_type, cls_conf.item())
+                            except Exception as e:
+                                # Skip classification if there's an error
+                                pass
+            
+            annotated = _draw_detections(frame, result, model.names, classifications=classifications)
             inference_dt = time.time() - inference_start
 
             frames_processed += 1
@@ -287,6 +471,18 @@ def parse_args() -> argparse.Namespace:
         default="YOLOv8 Drone Detection",
         help="Window title for live display.",
     )
+    parser.add_argument(
+        "--classifier",
+        type=str,
+        default=None,
+        help="Optional path to classification model for drone type classification.",
+    )
+    parser.add_argument(
+        "--classification-conf",
+        type=float,
+        default=0.3,
+        help="Minimum detection confidence to run classification (default: 0.3).",
+    )
     return parser.parse_args()
 
 
@@ -302,6 +498,8 @@ def main() -> None:
         display=not args.no_display,
         output_path=args.output,
         window_name=args.window_name,
+        classifier_path=args.classifier,
+        classification_conf=args.classification_conf,
     )
 
 

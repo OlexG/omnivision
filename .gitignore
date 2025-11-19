@@ -44,3 +44,9 @@ wandb/
 # Logs
 *.log
 results/
+
+# Video outputs
+*.mp4
+*.avi
+*.mov
+*.mkv
