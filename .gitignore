@@ -12,6 +12,10 @@ data/processed/*
 data/synthetic/*
 data/augmented/*
 data/splits/*
+data/classification/*
+data/part2/*
+data/raw/*
+data/detection_binary/*
 
 # Python
 __pycache__/
@@ -50,3 +54,12 @@ results/
 *.avi
 *.mov
 *.mkv
+
+# Training runs and model checkpoints
+runs/
+models/checkpoints/
+*.pt
+*.pth
+
+# Notebooks data
+notebooks/drone-vs-bird-object-detection-1/
