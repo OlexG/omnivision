@@ -4,11 +4,18 @@ Vision-based drone detection system for identifying and classifying drones withi
 
 ## Setup
 
+0. Install uv
+Install uv by following [this link](https://docs.astral.sh/uv/getting-started/installation/)
+i.e. running
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 1. Create virtual environment and install dependencies:
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate
+uv sync
 ```
 
 2. Configure API key in `.env`:
